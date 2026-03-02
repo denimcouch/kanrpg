@@ -153,24 +153,24 @@ func (m Model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// View task (read-only)
 	case "enter", "v":
-		if m.focusedTaskObj() != nil {
+		if _, ok := m.focusedTaskObj(); ok {
 			m.mode = ModeViewTask
 		}
 		return m, nil
 
 	// Edit task
 	case "e":
-		task := m.focusedTaskObj()
-		if task == nil {
+		task, ok := m.focusedTaskObj()
+		if !ok {
 			return m, nil
 		}
-		m.form = newTaskForm(*task, m.columns, m.focusedCol)
+		m.form = newTaskForm(task, m.columns, m.focusedCol)
 		m.mode = ModeEditTask
 		return m, nil
 
 	// Delete task
 	case "d":
-		if m.focusedTaskObj() == nil {
+		if _, ok := m.focusedTaskObj(); !ok {
 			return m, nil
 		}
 		m.mode = ModeConfirmDeleteTask
@@ -227,9 +227,8 @@ func (m Model) updateViewTask(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "q":
 		m.mode = ModeBrowse
 	case "e":
-		task := m.focusedTaskObj()
-		if task != nil {
-			m.form = newTaskForm(*task, m.columns, m.focusedCol)
+		if task, ok := m.focusedTaskObj(); ok {
+			m.form = newTaskForm(task, m.columns, m.focusedCol)
 			m.mode = ModeEditTask
 		}
 	}
@@ -239,8 +238,7 @@ func (m Model) updateViewTask(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateConfirmDeleteTask(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		task := m.focusedTaskObj()
-		if task != nil {
+		if task, ok := m.focusedTaskObj(); ok {
 			if err := m.db.DeleteTask(task.ID); err != nil {
 				m.err = err
 			} else {
@@ -294,7 +292,9 @@ func (m Model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
-		return m.submitForm()
+		if !m.form.InterceptsEnter() {
+			return m.submitForm()
+		}
 	}
 
 	var cmd tea.Cmd
@@ -305,8 +305,8 @@ func (m Model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) submitForm() (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case ModeEditTask, ModeAddTask:
-		task := m.focusedTaskObj()
-		if task == nil {
+		task, ok := m.focusedTaskObj()
+		if !ok {
 			m.mode = ModeBrowse
 			return m, nil
 		}
@@ -319,10 +319,18 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		task.Description = m.form.Description()
 		task.Priority = m.form.Priority()
 
+		// Persist field edits (title, description, priority) first, while the
+		// task is still in its current column. This keeps the two concerns
+		// separate: UpdateTask owns field data, MoveTask owns position/column.
+		if err := m.db.UpdateTask(task); err != nil {
+			m.err = err
+			m.mode = ModeBrowse
+			return m, nil
+		}
+
 		// Handle column change via the column selector
 		newColIdx := m.form.ColumnIdx()
 		if newColIdx != m.focusedCol && newColIdx >= 0 && newColIdx < len(m.columns) {
-			// Move to new column first
 			dstCol := m.columns[newColIdx]
 			targetPos := len(m.tasks[dstCol.ID])
 			if err := m.db.MoveTask(task.ID, dstCol.ID, targetPos); err != nil {
@@ -330,6 +338,7 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 				m.mode = ModeBrowse
 				return m, nil
 			}
+
 			// Update in-memory: remove from src
 			srcCol := m.columns[m.focusedCol]
 			srcTasks := m.tasks[srcCol.ID]
@@ -338,26 +347,18 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			newSrc = append(newSrc, srcTasks[m.focusedTask+1:]...)
 			m.tasks[srcCol.ID] = newSrc
 
-			// Reload task with updated fields before adding to dst
 			task.ColumnID = dstCol.ID
 			task.Position = targetPos
-			if err := m.db.UpdateTask(*task); err != nil {
-				m.err = err
-			}
-			m.tasks[dstCol.ID] = append(m.tasks[dstCol.ID], *task)
+			m.tasks[dstCol.ID] = append(m.tasks[dstCol.ID], task)
 
 			m.focusedCol = newColIdx
 			m.focusedTask = len(m.tasks[dstCol.ID]) - 1
 		} else {
-			// Same column: just update the task
-			if err := m.db.UpdateTask(*task); err != nil {
-				m.err = err
-			} else {
-				col := m.columns[m.focusedCol]
-				tasks := m.tasks[col.ID]
-				tasks[m.focusedTask] = *task
-				m.tasks[col.ID] = tasks
-			}
+			// Same column: reflect updated fields in-memory.
+			col := m.columns[m.focusedCol]
+			tasks := m.tasks[col.ID]
+			tasks[m.focusedTask] = task
+			m.tasks[col.ID] = tasks
 		}
 		m.mode = ModeBrowse
 
@@ -407,8 +408,8 @@ func (m Model) moveTaskToColumn(targetColIdx int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	task := m.focusedTaskObj()
-	if task == nil {
+	task, ok := m.focusedTaskObj()
+	if !ok {
 		return m, nil
 	}
 
@@ -421,10 +422,8 @@ func (m Model) moveTaskToColumn(targetColIdx int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Copy the moved task's data before mutating slices
-	movedTask := *task
-	movedTask.ColumnID = dstCol.ID
-	movedTask.Position = targetPos
+	task.ColumnID = dstCol.ID
+	task.Position = targetPos
 
 	// Build new src slice without the moved task (avoid slice aliasing)
 	srcTasks := m.tasks[srcCol.ID]
@@ -433,7 +432,7 @@ func (m Model) moveTaskToColumn(targetColIdx int) (tea.Model, tea.Cmd) {
 	newSrc = append(newSrc, srcTasks[m.focusedTask+1:]...)
 	m.tasks[srcCol.ID] = newSrc
 
-	m.tasks[dstCol.ID] = append(m.tasks[dstCol.ID], movedTask)
+	m.tasks[dstCol.ID] = append(m.tasks[dstCol.ID], task)
 
 	m.focusedCol = targetColIdx
 	m.focusedTask = len(m.tasks[dstCol.ID]) - 1
@@ -503,13 +502,12 @@ func (m Model) currentTasks() []model.Task {
 	return m.tasks[m.columns[m.focusedCol].ID]
 }
 
-func (m Model) focusedTaskObj() *model.Task {
+func (m Model) focusedTaskObj() (model.Task, bool) {
 	tasks := m.currentTasks()
 	if len(tasks) == 0 || m.focusedTask >= len(tasks) {
-		return nil
+		return model.Task{}, false
 	}
-	t := tasks[m.focusedTask]
-	return &t
+	return tasks[m.focusedTask], true
 }
 
 func (m *Model) clampTask() {
@@ -577,10 +575,9 @@ func (m Model) View() string {
 		return centerView(m.form.View("Edit Column"), m.width, m.height)
 
 	case ModeViewTask:
-		task := m.focusedTaskObj()
-		if task != nil {
+		if task, ok := m.focusedTaskObj(); ok {
 			col := m.columns[m.focusedCol]
-			return centerView(renderTaskView(*task, col, m.width, m.height), m.width, m.height)
+			return centerView(renderTaskView(task, col, m.width, m.height), m.width, m.height)
 		}
 	}
 

@@ -184,7 +184,13 @@ func (db *DB) CreateTask(columnID int, priority model.Priority) (model.Task, err
 
 	now := time.Now()
 
-	res, err := db.conn.Exec(
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return model.Task{}, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
 		`INSERT INTO tasks (title, description, column_id, position, priority, created_at, updated_at)
 		 VALUES ('', '', ?, ?, ?, ?, ?)`,
 		columnID, position, int(priority), now, now,
@@ -198,9 +204,14 @@ func (db *DB) CreateTask(columnID int, priority model.Priority) (model.Task, err
 		return model.Task{}, err
 	}
 
-	// Set default title to "Task {id}"
+	// Set default title to "Task {id}" — done in the same transaction so both
+	// writes are atomic: either the task exists with a title, or not at all.
 	title := fmt.Sprintf("Task %d", id)
-	if _, err := db.conn.Exec(`UPDATE tasks SET title = ? WHERE id = ?`, title, id); err != nil {
+	if _, err := tx.Exec(`UPDATE tasks SET title = ? WHERE id = ?`, title, id); err != nil {
+		return model.Task{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
 		return model.Task{}, err
 	}
 

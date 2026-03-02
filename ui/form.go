@@ -10,16 +10,20 @@ import (
 
 type formField int
 
+// Field indices — used as values for FormModel.focused.
 const (
-	fieldTitle formField = iota
-	fieldDesc
-	fieldPriority
-	fieldColumn
-	fieldCount // total number of task form fields
+	fieldTitle    formField = iota // 0: shared across all form types
+	fieldDesc                      // 1: task form
+	fieldPriority                  // 2: task form
+	fieldColumn                    // 3: task form
+	fieldColor    formField = 1    // 1: column-edit form (replaces fieldDesc slot)
+)
 
-	fieldColor           formField = 1 // second field in column edit form
-	fieldCountColumn     formField = 1 // add-column form: title only
-	fieldCountEditColumn formField = 2 // edit-column form: title + color
+// Field counts — used by numFields() to bound tab-cycling.
+const (
+	fieldCountTask       formField = 4 // fieldTitle..fieldColumn
+	fieldCountAddColumn  formField = 1 // fieldTitle only
+	fieldCountEditColumn formField = 2 // fieldTitle + fieldColor
 )
 
 // palette is the set of colors users can cycle through when editing a column.
@@ -82,11 +86,6 @@ func newEditColumnForm(col model.Column) FormModel {
 	ti.CharLimit = 60
 	ti.Width = 50
 
-	ta := textarea.New()
-	ta.SetWidth(52)
-	ta.SetHeight(4)
-	ta.ShowLineNumbers = false
-
 	// Find the closest palette entry for the current color, defaulting to 0.
 	colorIdx := 0
 	for i, c := range palette {
@@ -98,9 +97,7 @@ func newEditColumnForm(col model.Column) FormModel {
 
 	return FormModel{
 		title:     ti,
-		desc:      ta,
 		focused:   fieldTitle,
-		isColForm: false,
 		isEditCol: true,
 		colorIdx:  colorIdx,
 	}
@@ -113,15 +110,8 @@ func newColumnForm() FormModel {
 	ti.CharLimit = 60
 	ti.Width = 50
 
-	ta := textarea.New()
-	ta.SetWidth(52)
-	ta.SetHeight(4)
-	ta.ShowLineNumbers = false
-
 	return FormModel{
 		title:     ti,
-		desc:      ta,
-		priority:  model.PriorityLow,
 		focused:   fieldTitle,
 		isColForm: true,
 	}
@@ -132,9 +122,9 @@ func (f FormModel) numFields() formField {
 	case f.isEditCol:
 		return fieldCountEditColumn
 	case f.isColForm:
-		return fieldCountColumn
+		return fieldCountAddColumn
 	default:
-		return fieldCount
+		return fieldCountTask
 	}
 }
 
@@ -223,6 +213,13 @@ func (f FormModel) Description() string      { return f.desc.Value() }
 func (f FormModel) Priority() model.Priority { return f.priority }
 func (f FormModel) ColumnIdx() int           { return f.columnIdx }
 func (f FormModel) Color() string            { return palette[f.colorIdx] }
+
+// InterceptsEnter reports whether the form should consume an enter key press
+// itself (e.g. to insert a newline in the description) rather than treating it
+// as a form submission signal.
+func (f FormModel) InterceptsEnter() bool {
+	return f.focused == fieldDesc
+}
 
 var (
 	formBoxStyle = lipgloss.NewStyle().

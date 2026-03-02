@@ -177,10 +177,10 @@ func renderColumn(m Model, col model.Column, focused bool, width, height, scroll
 	body := lipgloss.JoinVertical(lipgloss.Left, taskViews...)
 	content := lipgloss.JoinVertical(lipgloss.Left, header, body)
 
-	// Pad to fill column height so borders are consistent
-	contentHeight := strings.Count(content, "\n") + 1
-	if contentHeight < height {
-		content += strings.Repeat("\n", height-contentHeight)
+	// Pad to fill column height so borders are consistent.
+	// Use lipgloss.Height which is ANSI-escape-aware, unlike strings.Count.
+	if h := lipgloss.Height(content); h < height {
+		content += strings.Repeat("\n", height-h)
 	}
 
 	style := columnStyle.Width(width)
@@ -233,8 +233,7 @@ func renderStatusBar(m Model) string {
 
 	switch m.mode {
 	case ModeConfirmDeleteTask:
-		task := m.focusedTaskObj()
-		if task != nil {
+		if task, ok := m.focusedTaskObj(); ok {
 			return confirmStyle.Render(fmt.Sprintf("Delete task %q? (y/n)", task.Title))
 		}
 	case ModeConfirmDeleteColumn:
