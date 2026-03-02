@@ -225,16 +225,19 @@ func renderPriority(p model.Priority, focused bool) string {
 	var parts []string
 	for _, opt := range opts {
 		var s string
+		var style lipgloss.Style
 		switch opt {
 		case model.PriorityLow:
-			s = priorityLowStyle.Render(opt.String())
+			style = priorityLowStyle
 		case model.PriorityMed:
-			s = priorityMedStyle.Render(opt.String())
+			style = priorityMedStyle
 		case model.PriorityHigh:
-			s = priorityHighStyle.Render(opt.String())
+			style = priorityHighStyle
 		}
 		if opt == p {
-			s = lipgloss.NewStyle().Bold(true).Underline(focused).Render("[" + s + "]")
+			s = style.Bold(true).Underline(focused).Render("[" + opt.String() + "]")
+		} else {
+			s = style.Render(opt.String())
 		}
 		parts = append(parts, s)
 	}
@@ -244,9 +247,11 @@ func renderPriority(p model.Priority, focused bool) string {
 func renderColumnSelector(columns []model.Column, idx int, focused bool) string {
 	var parts []string
 	for i, col := range columns {
-		name := lipgloss.NewStyle().Foreground(lipgloss.Color(col.Color)).Render(col.Name)
+		var name string
 		if i == idx {
-			name = lipgloss.NewStyle().Bold(true).Underline(focused).Render("[" + name + "]")
+			name = lipgloss.NewStyle().Bold(true).Underline(focused).Foreground(lipgloss.Color(col.Color)).Render("[" + col.Name + "]")
+		} else {
+			name = lipgloss.NewStyle().Foreground(lipgloss.Color(col.Color)).Render(col.Name)
 		}
 		parts = append(parts, name)
 	}
