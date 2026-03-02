@@ -1,6 +1,6 @@
 # Plan: Markdown Rendering for Task Descriptions
 
-**Version:** v2 (2026-03-02)
+**Version:** v3 (2026-03-02)
 
 ---
 
@@ -30,15 +30,14 @@ Add a `renderMarkdown(content string, width int, r *glamour.TermRenderer) string
 - Calls `r.Render(content)`, trims trailing newlines from the output
 - Falls back to `viewDescStyle.Render(content)` on any error
 
-**Content width calculation:** The view modal uses `formBoxStyle` which has `Padding(1, 2)` and a rounded border — that's 2 (padding left+right) + 2 (border left+right) = 4 chars of overhead. The outer `renderTaskView` adds its own `Padding(1, 3)` = 6 more horizontal chars, totaling 10. Use `clamp(m.width - 10, 20, m.width - 10)` — i.e., no arbitrary upper cap; let the content fill the box. Document this arithmetic in a comment.
+**Content width calculation:** The view modal uses `formBoxStyle` which has `Padding(1, 2)` and a rounded border — that's 2 (padding left+right) + 2 (border left+right) = 4 chars of overhead. The outer box adds its own `Padding(1, 3)` = 6 more horizontal chars, totaling 10. Use `max(m.width - 10, 20)` — no arbitrary upper cap; let the content fill the box. Document this arithmetic in a comment.
 
 **Empty description guard:** The caller (`renderTaskView`) retains responsibility for guarding the empty-description case (current behavior: `viewDescEmptyStyle.Render("(no description)")`). `renderMarkdown` is only called with non-empty content.
 
-**Refactor `renderTaskView`** into two functions:
+**Replace `renderTaskView`** with a single function:
 - `renderTaskViewContent(task model.Task, col model.Column, contentWidth int) string` — builds the inner content string (title, pills, rendered description, timestamps, help text). No box styling, no vertical padding.
-- `renderTaskView(task model.Task, col model.Column, w, h int) string` — the outer wrapper: computes viewport dimensions, calls `renderTaskViewContent`, sets viewport content (via `initViewport`), and returns `formBoxStyle.Padding(1, 3).Render(m.viewVP.View())`.
 
-**Remove** the existing vertical-padding logic from `renderTaskView` — that responsibility moves entirely to the viewport (the viewport fills the box height; no manual blank-line padding needed).
+**Delete `renderTaskView` entirely.** Box wrapping and viewport rendering move to `View()` (see §3). The existing vertical-padding logic in `renderTaskView` is also removed — that responsibility moves to the viewport.
 
 Update help text from `"e: edit   esc: back"` to `"↑/↓: scroll  e: edit  esc: back"`.
 
@@ -51,20 +50,22 @@ glamourRenderer *glamour.TermRenderer
 glamourWidth    int  // terminal width when renderer was last created
 ```
 
-**Add `initGlamourRenderer(width int)` method** on `*Model`:
+**Add `initGlamourRenderer(width int)` function** with signature `(m Model, width int) Model`:
 - Creates a `glamour.TermRenderer` with `WithStandardStyle("dark")` and `WithWordWrap(width)`
-- Stores it in `m.glamourRenderer` and records `m.glamourWidth = width`
+- Returns a copy of `m` with `glamourRenderer` and `glamourWidth` set
 - Called lazily in `initViewport` when `m.glamourRenderer == nil || m.glamourWidth != contentWidth`
 - This is the single place a renderer is ever constructed
 
+> **Receiver strategy:** `initViewport` and `initGlamourRenderer` use the **return-by-value pattern** consistent with the rest of the bubbletea codebase — they take a `Model` value, set fields, and return the modified `Model`. The caller assigns the return value (`m = initViewport(m, task, col)`). Do not use pointer receivers; the bubbletea update loop passes the model by value and pointer-receiver mutations on intermediate copies will be silently discarded.
+
 > **Note on glamour style:** `WithStandardStyle("dark")` may produce colors that conflict with the app's Dracula-inspired palette. A custom stylesheet matching the existing palette is deferred to a follow-up. The fallback behavior (plain lipgloss render on error) means visual glitches never break functionality.
 
-**Add `initViewport(task model.Task, col model.Column)` method** on `*Model`:
-- Computes `contentWidth = clamp(m.width - 10, 20, m.width - 10)`
-- Calls `initGlamourRenderer(contentWidth)` if renderer needs creation/recreation
+**Add `initViewport(task model.Task, col model.Column)` method** with signature `(m Model, task model.Task, col model.Column) Model`:
+- Computes `contentWidth = max(m.width - 10, 20)`
+- Calls `m = initGlamourRenderer(m, contentWidth)` if renderer needs creation/recreation
 - Computes viewport height: `(m.height * 4 / 5) - 4` (same formula used by `formBoxStyle` height expansion)
 - Calls `renderTaskViewContent(task, col, contentWidth)` to produce the content string
-- Initializes `m.viewVP` with the computed width and height, sets content
+- Sets `m.viewVP` with the computed width and height and content, returns `m`
 - This is the **single source of truth** for all viewport setup — called both when entering view mode and on resize
 
 **Restructure `Update()` dispatch:**
@@ -111,7 +112,7 @@ func (m Model) updateViewTask(msg tea.Msg) (tea.Model, tea.Cmd) {
         m.height = msg.Height
         if task, ok := m.focusedTaskObj(); ok {
             col := m.columns[m.focusedCol]
-            m.initViewport(task, col)
+            m = initViewport(m, task, col)
         }
         return m, nil
     case tea.KeyMsg:
@@ -134,7 +135,7 @@ func (m Model) updateViewTask(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 ```
 
-**When entering `ModeViewTask`** (in `updateBrowse`, `case "enter", "v":` — currently lines 154-158), call `m.initViewport(task, col)` before setting `m.mode = ModeViewTask`.
+**When entering `ModeViewTask`** (in `updateBrowse`, `case "enter", "v":` — currently lines 154-158), call `m = initViewport(m, task, col)` before setting `m.mode = ModeViewTask`.
 
 **Update `View()` case for `ModeViewTask`**: Replace the direct `renderTaskView` call with:
 ```go
@@ -151,7 +152,7 @@ Change `ta.CharLimit` in `newTaskForm` from `500` to `2000`.
 ### 5. Tests — `ui/board_test.go` (new file)
 
 - `TestRenderMarkdown_Basic` — markdown input produces styled/non-empty output
-- `TestRenderMarkdown_Empty` — empty string guard is respected by caller; helper itself doesn't need to handle it (document this explicitly in test comment)
+- `TestRenderTaskViewContent_EmptyDescription` — when task description is empty, `renderTaskViewContent` output contains `"(no description)"` (verifies the caller guard, not `renderMarkdown`)
 - `TestRenderMarkdown_WidthRespected` — long single-line text wraps within the given width
 - `TestRenderMarkdown_FallbackOnNilRenderer` — passing `nil` renderer falls back gracefully without panic
 
@@ -169,7 +170,7 @@ go vet ./...
 ## Files Modified
 
 - `go.mod` / `go.sum` — new glamour dependency
-- `ui/board.go` — add `renderMarkdown`, refactor `renderTaskView` into content + wrapper, remove vertical-padding logic
+- `ui/board.go` — add `renderMarkdown`, replace `renderTaskView` with `renderTaskViewContent`, remove vertical-padding logic
 - `ui/app.go` — add `viewVP`, `glamourRenderer`, `glamourWidth` fields; add `initViewport` and `initGlamourRenderer` methods; restructure `Update()` dispatch; update `updateViewTask` signature; update `View()` for `ModeViewTask`
 - `ui/form.go` — increase `ta.CharLimit` from 500 to 2000
 - `ui/board_test.go` — new test file
