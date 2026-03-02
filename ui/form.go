@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -182,11 +184,12 @@ func (f FormModel) Update(msg tea.Msg) (FormModel, tea.Cmd) {
 		}
 	}
 
-	if f.focused == fieldTitle {
+	switch f.focused {
+	case fieldTitle:
 		var cmd tea.Cmd
 		f.title, cmd = f.title.Update(msg)
 		cmds = append(cmds, cmd)
-	} else if f.focused == fieldDesc {
+	case fieldDesc:
 		var cmd tea.Cmd
 		f.desc, cmd = f.desc.Update(msg)
 		cmds = append(cmds, cmd)
@@ -196,13 +199,14 @@ func (f FormModel) Update(msg tea.Msg) (FormModel, tea.Cmd) {
 }
 
 func (f *FormModel) syncFocus() {
-	if f.focused == fieldTitle {
+	switch f.focused {
+	case fieldTitle:
 		f.title.Focus()
 		f.desc.Blur()
-	} else if f.focused == fieldDesc {
+	case fieldDesc:
 		f.title.Blur()
 		f.desc.Focus()
-	} else {
+	default:
 		f.title.Blur()
 		f.desc.Blur()
 	}
@@ -331,14 +335,7 @@ func renderColorPicker(idx int, focused bool) string {
 			parts = append(parts, swatch.Render("●"))
 		}
 	}
-	result := ""
-	for i, p := range parts {
-		if i > 0 {
-			result += "  "
-		}
-		result += p
-	}
-	return result
+	return strings.Join(parts, "  ")
 }
 
 func renderColumnSelector(columns []model.Column, idx int, focused bool) string {
@@ -352,12 +349,5 @@ func renderColumnSelector(columns []model.Column, idx int, focused bool) string 
 		}
 		parts = append(parts, name)
 	}
-	result := ""
-	for i, p := range parts {
-		if i > 0 {
-			result += "  "
-		}
-		result += p
-	}
-	return result
+	return strings.Join(parts, "  ")
 }

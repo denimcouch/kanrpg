@@ -93,10 +93,6 @@ func initGlamourRenderer(m Model, contentWidth int) Model {
 	return m
 }
 
-// initViewport (re)initialises the viewport for the task view modal.
-// It lazily creates or recreates the glamour renderer when the content width
-// changes, then sets the viewport content and dimensions.
-// This is the single source of truth for all viewport setup.
 func initViewport(m Model, task model.Task, col model.Column) Model {
 	// Target ~60% of terminal width, then subtract box overhead:
 	// formBoxStyle Padding(1,2) + border = 4 chars; outer Padding(1,3) = 6 chars; total = 10.
@@ -106,13 +102,8 @@ func initViewport(m Model, task model.Task, col model.Column) Model {
 		m = initGlamourRenderer(m, contentWidth)
 	}
 
-	vpHeight := (m.height * 4 / 5) - 4
-	if vpHeight < 1 {
-		vpHeight = 1
-	}
-
+	vpHeight := max((m.height*4/5)-4, 1)
 	content := renderTaskViewContent(task, col, m.glamourRenderer)
-
 	vp := viewport.New(contentWidth, vpHeight)
 	vp.SetContent(content)
 	m.viewVP = vp
@@ -124,8 +115,6 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// ModeViewTask gets first look at all message types so the viewport receives
-	// mouse scroll events and window resize in addition to key events.
 	if m.mode == ModeViewTask {
 		return m.updateViewTask(msg)
 	}
@@ -388,9 +377,6 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		task.Description = m.form.Description()
 		task.Priority = m.form.Priority()
 
-		// Persist field edits (title, description, priority) first, while the
-		// task is still in its current column. This keeps the two concerns
-		// separate: UpdateTask owns field data, MoveTask owns position/column.
 		if err := m.db.UpdateTask(task); err != nil {
 			m.err = err
 			m.mode = ModeBrowse
@@ -408,7 +394,6 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Update in-memory: remove from src
 			srcCol := m.columns[m.focusedCol]
 			srcTasks := m.tasks[srcCol.ID]
 			newSrc := make([]model.Task, 0, len(srcTasks)-1)

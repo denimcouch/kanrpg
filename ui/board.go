@@ -150,14 +150,8 @@ func renderColumn(m Model, col model.Column, focused bool, width, height, scroll
 	header := lipgloss.JoinHorizontal(lipgloss.Top, nameStr, "  ", badgeStr)
 
 	visible := tasksVisible(height)
-	start := scrollOffset
-	if start > len(tasks) {
-		start = len(tasks)
-	}
-	end := start + visible
-	if end > len(tasks) {
-		end = len(tasks)
-	}
+	start := min(scrollOffset, len(tasks))
+	end := min(start+visible, len(tasks))
 	visibleTasks := tasks[start:end]
 
 	var taskViews []string
