@@ -64,6 +64,16 @@ var (
 	colPillBaseStyle = lipgloss.NewStyle()
 )
 
+const taskCardHeight = 5 // 3 content lines + 2 border lines
+
+func tasksVisible(colHeight int) int {
+	usable := colHeight - 3 // subtract col border (2) + header (1)
+	if usable < taskCardHeight {
+		return 1
+	}
+	return usable / taskCardHeight
+}
+
 func relativeTime(t time.Time) string {
 	d := time.Since(t)
 	switch {
@@ -104,7 +114,7 @@ func renderBoard(m Model) string {
 	var cols []string
 	for i, col := range m.columns {
 		focused := i == m.focusedCol
-		cols = append(cols, renderColumn(m, col, focused, colWidth, colHeight))
+		cols = append(cols, renderColumn(m, col, focused, colWidth, colHeight, m.scrollOffsets[col.ID]))
 	}
 
 	board := lipgloss.JoinHorizontal(lipgloss.Top, cols...)
@@ -130,7 +140,7 @@ func innerWidth(colWidth int) int {
 	return colWidth - 2 // subtract column border (left + right)
 }
 
-func renderColumn(m Model, col model.Column, focused bool, width, height int) string {
+func renderColumn(m Model, col model.Column, focused bool, width, height, scrollOffset int) string {
 	inner := innerWidth(width)
 	tasks := m.tasks[col.ID]
 
@@ -138,13 +148,24 @@ func renderColumn(m Model, col model.Column, focused bool, width, height int) st
 	badgeStr := taskMetaStyle.Render(fmt.Sprintf("[%d]", len(tasks)))
 	header := lipgloss.JoinHorizontal(lipgloss.Top, nameStr, "  ", badgeStr)
 
+	visible := tasksVisible(height)
+	start := scrollOffset
+	if start > len(tasks) {
+		start = len(tasks)
+	}
+	end := start + visible
+	if end > len(tasks) {
+		end = len(tasks)
+	}
+	visibleTasks := tasks[start:end]
+
 	var taskViews []string
-	for i, task := range tasks {
-		isFocused := focused && i == m.focusedTask
+	for i, task := range visibleTasks {
+		isFocused := focused && (start+i) == m.focusedTask
 		taskViews = append(taskViews, renderTask(task, isFocused, inner))
 	}
 
-	if len(taskViews) == 0 {
+	if len(tasks) == 0 {
 		taskViews = append(taskViews,
 			lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#44475A")).

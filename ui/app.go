@@ -23,23 +23,25 @@ const (
 )
 
 type Model struct {
-	columns     []model.Column
-	tasks       map[int][]model.Task
-	focusedCol  int
-	focusedTask int
-	mode        Mode
-	form        FormModel
-	db          *db.DB
-	width       int
-	height      int
-	showHelp    bool
-	err         error
+	columns       []model.Column
+	tasks         map[int][]model.Task
+	focusedCol    int
+	focusedTask   int
+	mode          Mode
+	form          FormModel
+	db            *db.DB
+	width         int
+	height        int
+	showHelp      bool
+	err           error
+	scrollOffsets map[int]int // keyed by column ID; first visible task index
 }
 
 func NewModel(database *db.DB) (Model, error) {
 	m := Model{
-		db:    database,
-		tasks: make(map[int][]model.Task),
+		db:            database,
+		tasks:         make(map[int][]model.Task),
+		scrollOffsets: make(map[int]int),
 	}
 
 	if err := m.loadData(); err != nil {
@@ -79,6 +81,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.clampAllScrollOffsets()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -215,6 +218,7 @@ func (m Model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	m.ensureTaskVisible()
 	return m, nil
 }
 
@@ -247,6 +251,7 @@ func (m Model) updateConfirmDeleteTask(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				updated = append(updated, tasks[m.focusedTask+1:]...)
 				m.tasks[col.ID] = updated
 				m.clampTask()
+				m.ensureTaskVisible()
 			}
 		}
 		m.mode = ModeBrowse
@@ -432,6 +437,7 @@ func (m Model) moveTaskToColumn(targetColIdx int) (tea.Model, tea.Cmd) {
 
 	m.focusedCol = targetColIdx
 	m.focusedTask = len(m.tasks[dstCol.ID]) - 1
+	m.ensureTaskVisible()
 
 	return m, nil
 }
@@ -485,6 +491,7 @@ func (m Model) reorderTask(delta int) (tea.Model, tea.Cmd) {
 	}
 	m.tasks[col.ID] = updated
 	m.focusedTask = newIdx
+	m.ensureTaskVisible()
 
 	return m, nil
 }
@@ -514,6 +521,38 @@ func (m *Model) clampTask() {
 			m.focusedTask = len(tasks) - 1
 		}
 	}
+}
+
+func (m *Model) clampAllScrollOffsets() {
+	visible := tasksVisible(m.height - 4)
+	for _, col := range m.columns {
+		max := len(m.tasks[col.ID]) - visible
+		if max < 0 {
+			max = 0
+		}
+		if m.scrollOffsets[col.ID] > max {
+			m.scrollOffsets[col.ID] = max
+		}
+	}
+}
+
+func (m *Model) ensureTaskVisible() {
+	if len(m.columns) == 0 {
+		return
+	}
+	col := m.columns[m.focusedCol]
+	visible := tasksVisible(m.height - 4)
+	offset := m.scrollOffsets[col.ID]
+	if m.focusedTask >= offset+visible {
+		offset = m.focusedTask - visible + 1
+	}
+	if m.focusedTask < offset {
+		offset = m.focusedTask
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	m.scrollOffsets[col.ID] = offset
 }
 
 func (m Model) View() string {
