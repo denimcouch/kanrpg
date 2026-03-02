@@ -242,7 +242,7 @@ var (
 	formHelpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#6272A4"))
 )
 
-func (f FormModel) View(title string) string {
+func (f FormModel) View(title string, h int) string {
 	heading := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8F8F2")).Render(title)
 
 	titleLabel := labelStyle(f.focused == fieldTitle, "Title")
@@ -272,6 +272,19 @@ func (f FormModel) View(title string) string {
 		help = formHelpStyle.Render("tab/shift+tab: next/prev field  •  enter: confirm  •  esc: cancel")
 	}
 	rows = append(rows, "", help)
+
+	// Expand vertically: target ~80% of terminal height, minus box borders+padding (4 lines).
+	targetHeight := (h * 4 / 5) - 4
+	padding := targetHeight - len(rows)
+	// Insert blank lines before the help row so content stays at the top.
+	if padding > 0 {
+		helpRow := rows[len(rows)-1]
+		rows = rows[:len(rows)-1]
+		for range padding {
+			rows = append(rows, "")
+		}
+		rows = append(rows, helpRow)
+	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return formBoxStyle.Render(body)

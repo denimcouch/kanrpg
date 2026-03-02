@@ -273,7 +273,7 @@ func renderTaskView(task model.Task, col model.Column, w, h int) string {
 
 	help := formHelpStyle.Render("e: edit   esc: back")
 
-	rows := []string{
+	fixedRows := []string{
 		"",
 		title,
 		"",
@@ -285,6 +285,20 @@ func renderTaskView(task model.Task, col model.Column, w, h int) string {
 		updatedRow,
 		"",
 		help,
+	}
+
+	// Expand vertically: target ~80% of terminal height, minus box borders+padding (4 lines).
+	targetHeight := (h * 4 / 5) - 4
+	fixedCount := len(fixedRows)
+	padding := targetHeight - fixedCount
+	if padding < 0 {
+		padding = 0
+	}
+
+	rows := make([]string, 0, fixedCount+padding)
+	rows = append(rows, fixedRows...)
+	for range padding {
+		rows = append(rows, "")
 	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)

@@ -566,13 +566,13 @@ func (m Model) View() string {
 		if m.mode == ModeEditTask {
 			title = "Edit Task"
 		}
-		return centerView(m.form.View(title), m.width, m.height)
+		return centerView(m.form.View(title, m.height), m.width, m.height)
 
 	case ModeAddColumn:
-		return centerView(m.form.View("New Column"), m.width, m.height)
+		return centerView(m.form.View("New Column", m.height), m.width, m.height)
 
 	case ModeEditColumn:
-		return centerView(m.form.View("Edit Column"), m.width, m.height)
+		return centerView(m.form.View("Edit Column", m.height), m.width, m.height)
 
 	case ModeViewTask:
 		if task, ok := m.focusedTaskObj(); ok {
