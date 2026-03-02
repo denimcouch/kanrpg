@@ -77,8 +77,6 @@ func (m *Model) loadData() error {
 	return nil
 }
 
-// initGlamourRenderer creates a new glamour TermRenderer sized to contentWidth
-// and returns the updated Model. This is the single place a renderer is constructed.
 func initGlamourRenderer(m Model, contentWidth int) Model {
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStandardStyle("dark"),
