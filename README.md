@@ -40,14 +40,17 @@ go test ./...
 
 | Key | Action |
 |-----|--------|
-| `←` `→` / `h` `l` | Move between columns |
-| `↑` `↓` / `k` `j` | Move between tasks |
+| `←` `→` / `h` `l` | Navigate columns |
+| `↑` `↓` / `k` `j` | Navigate tasks |
+| `enter` / `v` | View focused task |
+| `n` | New task in focused column |
+| `e` | Edit focused task |
+| `d` | Delete focused task |
 | `H` `L` | Move task to previous/next column |
-| `K` `J` | Move task up/down within column |
-| `n` | New task |
-| `e` | Edit task |
-| `d` | Delete task |
+| `K` `J` | Reorder task up/down within column |
+| `<` `>` | Reorder column left/right |
 | `N` | New column |
-| `X` | Delete column |
+| `C` | Edit column name/color |
+| `X` | Delete focused column |
 | `?` | Toggle help |
 | `q` | Quit |
