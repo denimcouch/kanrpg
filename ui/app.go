@@ -16,6 +16,7 @@ const (
 	ModeAddTask
 	ModeEditTask
 	ModeAddColumn
+	ModeEditColumn
 	ModeViewTask
 	ModeConfirmDeleteTask
 	ModeConfirmDeleteColumn
@@ -90,7 +91,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateConfirmDeleteTask(msg)
 		case ModeConfirmDeleteColumn:
 			return m.updateConfirmDeleteColumn(msg)
-		case ModeAddTask, ModeEditTask, ModeAddColumn:
+		case ModeAddTask, ModeEditTask, ModeAddColumn, ModeEditColumn:
 			return m.updateForm(msg)
 		}
 	}
@@ -183,6 +184,21 @@ func (m Model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.reorderTask(-1)
 	case "J":
 		return m.reorderTask(1)
+
+	// Reorder column
+	case "<":
+		return m.reorderColumn(-1)
+	case ">":
+		return m.reorderColumn(1)
+
+	// Edit column (rename / recolor)
+	case "C":
+		if len(m.columns) == 0 {
+			return m, nil
+		}
+		m.form = newEditColumnForm(m.columns[m.focusedCol])
+		m.mode = ModeEditColumn
+		return m, nil
 
 	// New column
 	case "N":
@@ -357,6 +373,25 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			m.focusedTask = 0
 		}
 		m.mode = ModeBrowse
+
+	case ModeEditColumn:
+		if m.focusedCol >= len(m.columns) {
+			m.mode = ModeBrowse
+			return m, nil
+		}
+		col := m.columns[m.focusedCol]
+		name := m.form.Title()
+		if name == "" {
+			name = col.Name
+		}
+		col.Name = name
+		col.Color = m.form.Color()
+		if err := m.db.UpdateColumn(col); err != nil {
+			m.err = err
+		} else {
+			m.columns[m.focusedCol] = col
+		}
+		m.mode = ModeBrowse
 	}
 
 	return m, nil
@@ -398,6 +433,27 @@ func (m Model) moveTaskToColumn(targetColIdx int) (tea.Model, tea.Cmd) {
 	m.focusedCol = targetColIdx
 	m.focusedTask = len(m.tasks[dstCol.ID]) - 1
 
+	return m, nil
+}
+
+func (m Model) reorderColumn(delta int) (tea.Model, tea.Cmd) {
+	newIdx := m.focusedCol + delta
+	if newIdx < 0 || newIdx >= len(m.columns) {
+		return m, nil
+	}
+
+	m.columns[m.focusedCol], m.columns[newIdx] = m.columns[newIdx], m.columns[m.focusedCol]
+
+	ids := make([]int, len(m.columns))
+	for i, col := range m.columns {
+		ids[i] = col.ID
+	}
+	if err := m.db.ReorderColumns(ids); err != nil {
+		m.err = err
+		return m, nil
+	}
+
+	m.focusedCol = newIdx
 	return m, nil
 }
 
@@ -477,6 +533,9 @@ func (m Model) View() string {
 
 	case ModeAddColumn:
 		return centerView(m.form.View("New Column"), m.width, m.height)
+
+	case ModeEditColumn:
+		return centerView(m.form.View("Edit Column"), m.width, m.height)
 
 	case ModeViewTask:
 		task := m.focusedTaskObj()

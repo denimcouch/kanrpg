@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/denimcouch/kancli-demo/model"
@@ -33,9 +34,6 @@ var (
 			Bold(true).
 			Foreground(lipgloss.Color("#F8F8F2"))
 
-	taskIDStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4"))
-
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6272A4")).
 			Padding(0, 1)
@@ -51,16 +49,45 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#FF5555")).
 			Padding(0, 2)
+
+	taskMetaStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#6272A4"))
+
+	taskTitleFocusedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F1FA8C"))
+
+	viewTitleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8F8F2"))
+	viewDescStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#BFBFBF"))
+	viewDescEmptyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#44475A"))
+	viewMetaSepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#44475A"))
+	viewTimeLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#6272A4")).Width(9)
+	viewTimeValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#F8F8F2"))
+
+	colPillBaseStyle = lipgloss.NewStyle()
 )
+
+func relativeTime(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	default:
+		return t.Format("Jan 2")
+	}
+}
 
 func priorityStyle(p model.Priority) lipgloss.Style {
 	switch p {
 	case model.PriorityMed:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FFB86C"))
+		return priorityMedStyle
 	case model.PriorityHigh:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
+		return priorityHighStyle
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#8BE9FD"))
+		return priorityLowStyle
 	}
 }
 
@@ -107,10 +134,9 @@ func renderColumn(m Model, col model.Column, focused bool, width, height int) st
 	inner := innerWidth(width)
 	tasks := m.tasks[col.ID]
 
-	header := columnHeaderStyle.
-		Foreground(lipgloss.Color(col.Color)).
-		Width(inner).
-		Render(fmt.Sprintf("%s (%d)", col.Name, len(tasks)))
+	nameStr := columnHeaderStyle.Foreground(lipgloss.Color(col.Color)).Render(col.Name)
+	badgeStr := taskMetaStyle.Render(fmt.Sprintf("[%d]", len(tasks)))
+	header := lipgloss.JoinHorizontal(lipgloss.Top, nameStr, "  ", badgeStr)
 
 	var taskViews []string
 	for i, task := range tasks {
@@ -145,24 +171,32 @@ func renderColumn(m Model, col model.Column, focused bool, width, height int) st
 }
 
 func renderTask(task model.Task, focused bool, colInnerWidth int) string {
-	// Task card sits inside the column's inner area.
-	// Task border costs 2 chars (left+right), so card inner width = colInnerWidth - 2.
 	cardInner := colInnerWidth - 2
 
 	pStyle := priorityStyle(task.Priority)
-	priorityIndicator := pStyle.Render(task.Priority.Label())
-	idStr := taskIDStyle.Render(fmt.Sprintf("#%d", task.ID))
+	rawID := fmt.Sprintf("#%d", task.ID)
+	idStr := taskMetaStyle.Render(rawID)
+	idLen := len(rawID)
 
-	// Reserve space for id prefix and a space separator.
-	idLen := len(fmt.Sprintf("#%d ", task.ID))
-	titleWidth := cardInner - idLen
-	if titleWidth < 1 {
-		titleWidth = 1
+	titleWidth := max(cardInner-idLen, 1)
+	var titleRendered string
+	if focused {
+		titleRendered = taskTitleFocusedStyle.Width(titleWidth).Render(task.Title)
+	} else {
+		titleRendered = taskTitleStyle.Width(titleWidth).Render(task.Title)
 	}
-	title := taskTitleStyle.Width(titleWidth).Render(task.Title)
+	titleRow := lipgloss.JoinHorizontal(lipgloss.Top, titleRendered, idStr)
 
-	top := lipgloss.JoinHorizontal(lipgloss.Top, idStr, " ", title)
-	card := lipgloss.JoinVertical(lipgloss.Left, top, priorityIndicator)
+	icon := task.Priority.Icon()
+	iconStr := pStyle.Render(icon)
+	ageStr := relativeTime(task.CreatedAt)
+	padLen := max(cardInner-lipgloss.Width(icon)-len(ageStr), 1)
+	midRow := lipgloss.JoinHorizontal(lipgloss.Top, iconStr, strings.Repeat(" ", padLen), taskMetaStyle.Render(ageStr))
+
+	filled := int(task.Priority)
+	bar := pStyle.Render(strings.Repeat("▓", filled) + strings.Repeat("░", 3-filled))
+
+	card := lipgloss.JoinVertical(lipgloss.Left, titleRow, midRow, bar)
 
 	style := taskStyle.Width(colInnerWidth)
 	if focused {
@@ -189,51 +223,52 @@ func renderStatusBar(m Model) string {
 		}
 	}
 
-	return helpStyle.Render("n: new task  e: edit  d: delete  H/L: move task  K/J: reorder  N: new col  X: delete col  ?: help  q: quit")
+	return helpStyle.Render("n: new task  e: edit  d: delete  H/L: move task  K/J: reorder  </>/: reorder col  N: new col  C: edit col  X: delete col  ?: help  q: quit")
 }
 
 func renderTaskView(task model.Task, col model.Column, w, h int) string {
-	const timeFormat = "2006-01-02 15:04"
+	title := viewTitleStyle.Render(task.Title)
 
-	heading := taskIDStyle.Render(fmt.Sprintf("Task #%d", task.ID))
+	sep := viewMetaSepStyle.Render("  ·  ")
+	priorityPill := priorityStyle(task.Priority).Render(task.Priority.Icon())
+	colPill := colPillBaseStyle.Foreground(lipgloss.Color(col.Color)).Render("◉ " + col.Name)
+	idPill := taskMetaStyle.Render(fmt.Sprintf("#%d", task.ID))
+	pillRow := lipgloss.JoinHorizontal(lipgloss.Top, priorityPill, sep, colPill, sep, idPill)
 
-	titleLabel := formLabelStyle.Render("Title")
-	titleVal := task.Title
-
-	descLabel := formLabelStyle.Render("Description")
-	descVal := task.Description
-	if descVal == "" {
-		descVal = formHelpStyle.Render("(no description)")
+	var descRendered string
+	if task.Description == "" {
+		descRendered = viewDescEmptyStyle.Render("(no description)")
+	} else {
+		descRendered = viewDescStyle.Render(task.Description)
 	}
 
-	labelWidth := lipgloss.NewStyle().Width(10)
-	pStyle := priorityStyle(task.Priority)
-	metaPriority := lipgloss.JoinHorizontal(lipgloss.Top, labelWidth.Render(formLabelStyle.Render("Priority")), pStyle.Render(task.Priority.Label()))
-	metaColumn := lipgloss.JoinHorizontal(lipgloss.Top, labelWidth.Render(formLabelStyle.Render("Column")), col.Name)
-	metaCreated := lipgloss.JoinHorizontal(lipgloss.Top, labelWidth.Render(formLabelStyle.Render("Created")), task.CreatedAt.Format(timeFormat))
-	metaUpdated := lipgloss.JoinHorizontal(lipgloss.Top, labelWidth.Render(formLabelStyle.Render("Updated")), task.UpdatedAt.Format(timeFormat))
+	createdRow := lipgloss.JoinHorizontal(lipgloss.Top,
+		viewTimeLabelStyle.Render("Created"),
+		viewTimeValueStyle.Render(task.CreatedAt.Format("Jan 2 2006  15:04")),
+	)
+	updatedRow := lipgloss.JoinHorizontal(lipgloss.Top,
+		viewTimeLabelStyle.Render("Updated"),
+		viewTimeValueStyle.Render(relativeTime(task.UpdatedAt)),
+	)
 
-	help := formHelpStyle.Render("e: edit  esc: back")
+	help := formHelpStyle.Render("e: edit   esc: back")
 
 	rows := []string{
-		heading,
 		"",
-		titleLabel,
-		titleVal,
+		title,
 		"",
-		descLabel,
-		descVal,
+		pillRow,
 		"",
-		metaPriority,
-		metaColumn,
-		metaCreated,
-		metaUpdated,
+		descRendered,
+		"",
+		createdRow,
+		updatedRow,
 		"",
 		help,
 	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	return formBoxStyle.Render(body)
+	return formBoxStyle.Padding(1, 3).Render(body)
 }
 
 func renderHelpOverlay() string {
@@ -250,7 +285,9 @@ func renderHelpOverlay() string {
 		"L                Move task to next column",
 		"K                Move task up within column",
 		"J                Move task down within column",
+		"< / >            Reorder column left/right",
 		"N                New column",
+		"C                Edit column name / color",
 		"X                Delete focused column",
 		"?                Toggle this help",
 		"q                Quit",

@@ -17,8 +17,23 @@ const (
 	fieldColumn
 	fieldCount // total number of task form fields
 
-	fieldCountColumn formField = 1 // column form only has title
+	fieldColor           formField = 1 // second field in column edit form
+	fieldCountColumn     formField = 1 // add-column form: title only
+	fieldCountEditColumn formField = 2 // edit-column form: title + color
 )
+
+// palette is the set of colors users can cycle through when editing a column.
+var palette = []string{
+	"#FF5555", // red
+	"#FFB86C", // orange
+	"#F1FA8C", // yellow
+	"#50FA7B", // green
+	"#8BE9FD", // cyan
+	"#BD93F9", // purple
+	"#FF79C6", // pink
+	"#F8F8F2", // white
+	"#6272A4", // muted blue
+}
 
 type FormModel struct {
 	title       textinput.Model
@@ -28,6 +43,8 @@ type FormModel struct {
 	columnIdx   int            // index into columns
 	focused     formField
 	isColForm   bool // true when used for adding a column (title only)
+	isEditCol   bool // true when editing an existing column (title + color)
+	colorIdx    int  // index into palette
 }
 
 func newTaskForm(task model.Task, columns []model.Column, currentColIdx int) FormModel {
@@ -57,6 +74,38 @@ func newTaskForm(task model.Task, columns []model.Column, currentColIdx int) For
 	}
 }
 
+func newEditColumnForm(col model.Column) FormModel {
+	ti := textinput.New()
+	ti.Placeholder = "Column name"
+	ti.SetValue(col.Name)
+	ti.Focus()
+	ti.CharLimit = 60
+	ti.Width = 50
+
+	ta := textarea.New()
+	ta.SetWidth(52)
+	ta.SetHeight(4)
+	ta.ShowLineNumbers = false
+
+	// Find the closest palette entry for the current color, defaulting to 0.
+	colorIdx := 0
+	for i, c := range palette {
+		if c == col.Color {
+			colorIdx = i
+			break
+		}
+	}
+
+	return FormModel{
+		title:     ti,
+		desc:      ta,
+		focused:   fieldTitle,
+		isColForm: false,
+		isEditCol: true,
+		colorIdx:  colorIdx,
+	}
+}
+
 func newColumnForm() FormModel {
 	ti := textinput.New()
 	ti.Placeholder = "Column name"
@@ -79,10 +128,14 @@ func newColumnForm() FormModel {
 }
 
 func (f FormModel) numFields() formField {
-	if f.isColForm {
+	switch {
+	case f.isEditCol:
+		return fieldCountEditColumn
+	case f.isColForm:
 		return fieldCountColumn
+	default:
+		return fieldCount
 	}
-	return fieldCount
 }
 
 func (f FormModel) Update(msg tea.Msg) (FormModel, tea.Cmd) {
@@ -112,6 +165,11 @@ func (f FormModel) Update(msg tea.Msg) (FormModel, tea.Cmd) {
 					f.columnIdx--
 				}
 				return f, nil
+			case fieldColor:
+				if f.colorIdx > 0 {
+					f.colorIdx--
+				}
+				return f, nil
 			}
 		case "right":
 			switch f.focused {
@@ -123,6 +181,11 @@ func (f FormModel) Update(msg tea.Msg) (FormModel, tea.Cmd) {
 			case fieldColumn:
 				if f.columnIdx < len(f.columns)-1 {
 					f.columnIdx++
+				}
+				return f, nil
+			case fieldColor:
+				if f.colorIdx < len(palette)-1 {
+					f.colorIdx++
 				}
 				return f, nil
 			}
@@ -159,6 +222,7 @@ func (f FormModel) Title() string            { return f.title.Value() }
 func (f FormModel) Description() string      { return f.desc.Value() }
 func (f FormModel) Priority() model.Priority { return f.priority }
 func (f FormModel) ColumnIdx() int           { return f.columnIdx }
+func (f FormModel) Color() string            { return palette[f.colorIdx] }
 
 var (
 	formBoxStyle = lipgloss.NewStyle().
@@ -187,7 +251,10 @@ func (f FormModel) View(title string) string {
 	titleLabel := labelStyle(f.focused == fieldTitle, "Title")
 	rows := []string{heading, "", titleLabel, f.title.View()}
 
-	if !f.isColForm {
+	if f.isEditCol {
+		colorLabel := labelStyle(f.focused == fieldColor, "Color")
+		rows = append(rows, "", colorLabel, renderColorPicker(f.colorIdx, f.focused == fieldColor))
+	} else if !f.isColForm {
 		descLabel := labelStyle(f.focused == fieldDesc, "Description")
 		rows = append(rows, "", descLabel, f.desc.View())
 
@@ -242,6 +309,26 @@ func renderPriority(p model.Priority, focused bool) string {
 		parts = append(parts, s)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Left, parts[0], "  ", parts[1], "  ", parts[2])
+}
+
+func renderColorPicker(idx int, focused bool) string {
+	var parts []string
+	for i, hex := range palette {
+		swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(hex))
+		if i == idx {
+			parts = append(parts, swatch.Bold(true).Underline(focused).Render("[●]"))
+		} else {
+			parts = append(parts, swatch.Render("●"))
+		}
+	}
+	result := ""
+	for i, p := range parts {
+		if i > 0 {
+			result += "  "
+		}
+		result += p
+	}
+	return result
 }
 
 func renderColumnSelector(columns []model.Column, idx int, focused bool) string {

@@ -36,6 +36,19 @@ func (p Priority) Label() string {
 	}
 }
 
+func (p Priority) Icon() string {
+	var sym string
+	switch p {
+	case PriorityHigh:
+		sym = "▲"
+	case PriorityMed:
+		sym = "◆"
+	default:
+		sym = "▼"
+	}
+	return sym + " " + p.String()
+}
+
 type Column struct {
 	ID       int
 	Name     string
