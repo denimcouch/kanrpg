@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/denimcouch/kancli-demo/model"
+	"github.com/denimcouch/kanrpg/model"
 	_ "modernc.org/sqlite"
 )
 

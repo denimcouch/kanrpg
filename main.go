@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/denimcouch/kancli-demo/db"
-	"github.com/denimcouch/kancli-demo/ui"
+	"github.com/denimcouch/kanrpg/db"
+	"github.com/denimcouch/kanrpg/ui"
 )
 
 func main() {

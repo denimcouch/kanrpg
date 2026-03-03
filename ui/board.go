@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/denimcouch/kancli-demo/model"
+	"github.com/denimcouch/kanrpg/model"
 )
 
 var (

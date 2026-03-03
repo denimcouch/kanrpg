@@ -1,6 +1,6 @@
-# Kancli - Kanban on the Command Line
+# KanRPG - Kanban & Sorcery!
 
-A terminal-based Kanban board for developers who live in the CLI. Tasks are persisted in a local SQLite database. No accounts, no internet, no setup.
+A terminal-based Kanban board with fun RPG-like progression for developers who live in the CLI. Tasks are persisted in a local SQLite database. No accounts, no internet, no setup. Create a character who gains experience as you "defeat" tasks that you create.
 
 ## Requirements
 

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
-	"github.com/denimcouch/kancli-demo/model"
+	"github.com/denimcouch/kanrpg/model"
 )
 
 func newTestRenderer(t *testing.T, width int) *glamour.TermRenderer {
