@@ -40,7 +40,6 @@ func main() {
 func resolveDBPath() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
-		// Fall back to home dir
 		dir, err = os.UserHomeDir()
 		if err != nil {
 			return "", err
