@@ -66,7 +66,6 @@ func newTaskForm(task model.Task, columns []model.Column, currentColIdx int) For
 	ta.SetValue(task.Description)
 	ta.CharLimit = 2000
 	ta.SetWidth(52)
-	ta.SetHeight(4)
 	ta.ShowLineNumbers = false
 
 	return FormModel{
