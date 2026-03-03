@@ -3,7 +3,9 @@ package ui
 import (
 	"fmt"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/denimcouch/kanrpg/db"
 	"github.com/denimcouch/kanrpg/model"
@@ -23,18 +25,21 @@ const (
 )
 
 type Model struct {
-	columns       []model.Column
-	tasks         map[int][]model.Task
-	focusedCol    int
-	focusedTask   int
-	mode          Mode
-	form          FormModel
-	db            *db.DB
-	width         int
-	height        int
-	showHelp      bool
-	err           error
-	scrollOffsets map[int]int // keyed by column ID; first visible task index
+	columns         []model.Column
+	tasks           map[int][]model.Task
+	focusedCol      int
+	focusedTask     int
+	mode            Mode
+	form            FormModel
+	db              *db.DB
+	width           int
+	height          int
+	showHelp        bool
+	err             error
+	scrollOffsets   map[int]int // keyed by column ID; first visible task index
+	viewVP          viewport.Model
+	glamourRenderer *glamour.TermRenderer
+	glamourWidth    int // terminal width when renderer was last created
 }
 
 func NewModel(database *db.DB) (Model, error) {
@@ -72,11 +77,46 @@ func (m *Model) loadData() error {
 	return nil
 }
 
+func initGlamourRenderer(m Model, contentWidth int) Model {
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(contentWidth),
+	)
+	if err != nil {
+		// Leave glamourRenderer nil; renderMarkdown will fall back gracefully.
+		return m
+	}
+	m.glamourRenderer = r
+	m.glamourWidth = contentWidth
+	return m
+}
+
+func initViewport(m Model, task model.Task, col model.Column) Model {
+	// Target ~60% of terminal width, then subtract box overhead:
+	// formBoxStyle Padding(1,2) + border = 4 chars; outer Padding(1,3) = 6 chars; total = 10.
+	contentWidth := max(m.width*6/10-10, 20)
+
+	if m.glamourRenderer == nil || m.glamourWidth != contentWidth {
+		m = initGlamourRenderer(m, contentWidth)
+	}
+
+	vpHeight := max((m.height*4/5)-4, 1)
+	content := renderTaskViewContent(task, col, m.glamourRenderer)
+	vp := viewport.New(contentWidth, vpHeight)
+	vp.SetContent(content)
+	m.viewVP = vp
+	return m
+}
+
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.mode == ModeViewTask {
+		return m.updateViewTask(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -88,8 +128,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.mode {
 		case ModeBrowse:
 			return m.updateBrowse(msg)
-		case ModeViewTask:
-			return m.updateViewTask(msg)
 		case ModeConfirmDeleteTask:
 			return m.updateConfirmDeleteTask(msg)
 		case ModeConfirmDeleteColumn:
@@ -153,7 +191,9 @@ func (m Model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// View task (read-only)
 	case "enter", "v":
-		if _, ok := m.focusedTaskObj(); ok {
+		if task, ok := m.focusedTaskObj(); ok {
+			col := m.columns[m.focusedCol]
+			m = initViewport(m, task, col)
 			m.mode = ModeViewTask
 		}
 		return m, nil
@@ -222,17 +262,33 @@ func (m Model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateViewTask(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "q":
-		m.mode = ModeBrowse
-	case "e":
+func (m Model) updateViewTask(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		if task, ok := m.focusedTaskObj(); ok {
-			m.form = newTaskForm(task, m.columns, m.focusedCol)
-			m.mode = ModeEditTask
+			col := m.columns[m.focusedCol]
+			m = initViewport(m, task, col)
+		}
+		return m, nil
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc", "q":
+			m.mode = ModeBrowse
+			return m, nil
+		case "e":
+			if task, ok := m.focusedTaskObj(); ok {
+				m.form = newTaskForm(task, m.columns, m.focusedCol)
+				m.mode = ModeEditTask
+			}
+			return m, nil
 		}
 	}
-	return m, nil
+	// All other messages (mouse scroll, arrow keys for scrolling, etc.) pass through to the viewport.
+	var cmd tea.Cmd
+	m.viewVP, cmd = m.viewVP.Update(msg)
+	return m, cmd
 }
 
 func (m Model) updateConfirmDeleteTask(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -319,9 +375,6 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		task.Description = m.form.Description()
 		task.Priority = m.form.Priority()
 
-		// Persist field edits (title, description, priority) first, while the
-		// task is still in its current column. This keeps the two concerns
-		// separate: UpdateTask owns field data, MoveTask owns position/column.
 		if err := m.db.UpdateTask(task); err != nil {
 			m.err = err
 			m.mode = ModeBrowse
@@ -339,7 +392,6 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Update in-memory: remove from src
 			srcCol := m.columns[m.focusedCol]
 			srcTasks := m.tasks[srcCol.ID]
 			newSrc := make([]model.Task, 0, len(srcTasks)-1)
@@ -575,10 +627,7 @@ func (m Model) View() string {
 		return centerView(m.form.View("Edit Column", m.height), m.width, m.height)
 
 	case ModeViewTask:
-		if task, ok := m.focusedTaskObj(); ok {
-			col := m.columns[m.focusedCol]
-			return centerView(renderTaskView(task, col, m.width, m.height), m.width, m.height)
-		}
+		return centerView(formBoxStyle.Padding(1, 3).Render(m.viewVP.View()), m.width, m.height)
 	}
 
 	return renderBoard(m)

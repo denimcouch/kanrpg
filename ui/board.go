@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/denimcouch/kanrpg/model"
 )
@@ -149,14 +150,8 @@ func renderColumn(m Model, col model.Column, focused bool, width, height, scroll
 	header := lipgloss.JoinHorizontal(lipgloss.Top, nameStr, "  ", badgeStr)
 
 	visible := tasksVisible(height)
-	start := scrollOffset
-	if start > len(tasks) {
-		start = len(tasks)
-	}
-	end := start + visible
-	if end > len(tasks) {
-		end = len(tasks)
-	}
+	start := min(scrollOffset, len(tasks))
+	end := min(start+visible, len(tasks))
 	visibleTasks := tasks[start:end]
 
 	var taskViews []string
@@ -246,7 +241,26 @@ func renderStatusBar(m Model) string {
 	return helpStyle.Render("n: new task  e: edit  d: delete  H/L: move task  K/J: reorder  </>/: reorder col  N: new col  C: edit col  X: delete col  ?: help  q: quit")
 }
 
-func renderTaskView(task model.Task, col model.Column, w, h int) string {
+// renderMarkdown renders markdown content using the provided glamour TermRenderer.
+// Falls back to plain lipgloss rendering on any error or nil renderer.
+func renderMarkdown(content string, r *glamour.TermRenderer) string {
+	if r == nil {
+		return viewDescStyle.Render(content)
+	}
+	out, err := r.Render(content)
+	if err != nil {
+		return viewDescStyle.Render(content)
+	}
+	return strings.TrimRight(out, "\n")
+}
+
+// renderTaskViewContent builds the inner content string for the task view modal.
+// It does not apply box styling; the caller wraps it in a viewport.
+// r is the pre-initialised glamour renderer (sized to the usable content width).
+//
+// Width overhead: formBoxStyle has Padding(1,2) and rounded border = 4 horizontal chars;
+// the outer Padding(1,3) adds 6 more = 10 total. Use max(m.width-10, 20).
+func renderTaskViewContent(task model.Task, col model.Column, r *glamour.TermRenderer) string {
 	title := viewTitleStyle.Render(task.Title)
 
 	sep := viewMetaSepStyle.Render("  ·  ")
@@ -259,7 +273,7 @@ func renderTaskView(task model.Task, col model.Column, w, h int) string {
 	if task.Description == "" {
 		descRendered = viewDescEmptyStyle.Render("(no description)")
 	} else {
-		descRendered = viewDescStyle.Render(task.Description)
+		descRendered = renderMarkdown(task.Description, r)
 	}
 
 	createdRow := lipgloss.JoinHorizontal(lipgloss.Top,
@@ -271,9 +285,9 @@ func renderTaskView(task model.Task, col model.Column, w, h int) string {
 		viewTimeValueStyle.Render(relativeTime(task.UpdatedAt)),
 	)
 
-	help := formHelpStyle.Render("e: edit   esc: back")
+	help := formHelpStyle.Render("↑/↓: scroll  e: edit  esc: back")
 
-	fixedRows := []string{
+	rows := []string{
 		"",
 		title,
 		"",
@@ -287,22 +301,7 @@ func renderTaskView(task model.Task, col model.Column, w, h int) string {
 		help,
 	}
 
-	// Expand vertically: target ~80% of terminal height, minus box borders+padding (4 lines).
-	targetHeight := (h * 4 / 5) - 4
-	fixedCount := len(fixedRows)
-	padding := targetHeight - fixedCount
-	if padding < 0 {
-		padding = 0
-	}
-
-	rows := make([]string, 0, fixedCount+padding)
-	rows = append(rows, fixedRows...)
-	for range padding {
-		rows = append(rows, "")
-	}
-
-	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	return formBoxStyle.Padding(1, 3).Render(body)
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
 func renderHelpOverlay() string {
