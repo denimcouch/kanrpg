@@ -11,7 +11,7 @@ This guide gets a new contributor up and running on kancli.
 ## Setup
 
 ```sh
-git clone https://github.com/denimcouch/kancli-demo
+git clone https://github.com/denimcouch/kanrpg
 cd kancli-demo
 go mod download
 go run .

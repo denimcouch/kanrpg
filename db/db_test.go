@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/denimcouch/kancli-demo/model"
+	"github.com/denimcouch/kanrpg/model"
 )
 
 func newTestDB(t *testing.T) *DB {

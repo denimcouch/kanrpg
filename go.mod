@@ -1,4 +1,4 @@
-module github.com/denimcouch/kancli-demo
+module github.com/denimcouch/kanrpg
 
 go 1.25.2
 

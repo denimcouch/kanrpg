@@ -5,8 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/denimcouch/kancli-demo/db"
-	"github.com/denimcouch/kancli-demo/model"
+	"github.com/denimcouch/kanrpg/db"
+	"github.com/denimcouch/kanrpg/model"
 )
 
 type Mode int
