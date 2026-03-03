@@ -64,9 +64,8 @@ func newTaskForm(task model.Task, columns []model.Column, currentColIdx int) For
 	ta := textarea.New()
 	ta.Placeholder = "Description (optional)"
 	ta.SetValue(task.Description)
-	ta.CharLimit = 2000
 	ta.SetWidth(52)
-	ta.ShowLineNumbers = false
+	ta.ShowLineNumbers = true
 
 	return FormModel{
 		title:     ti,
