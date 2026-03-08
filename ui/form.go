@@ -255,6 +255,18 @@ func (f FormModel) View(title string, h int) string {
 		rows = append(rows, "", colorLabel, renderColorPicker(f.colorIdx, f.focused == fieldColor))
 	} else if !f.isColForm {
 		descLabel := labelStyle(f.focused == fieldDesc, "Description")
+
+		// Expand the textarea to fill available vertical space.
+		// Target ~80% of terminal height, minus box borders+padding (4 lines).
+		// Fixed rows: heading+""+titleLabel+title+""+descLabel+""+priorityLabel+priority+""+help = 11.
+		// Add 3 more when the column selector is visible.
+		fixedRows := 11
+		if len(f.columns) > 0 {
+			fixedRows += 3
+		}
+		taHeight := max((h*4/5)-4-fixedRows, 3)
+		f.desc.SetHeight(taHeight)
+
 		rows = append(rows, "", descLabel, f.desc.View())
 
 		priorityLabel := labelStyle(f.focused == fieldPriority, "Priority")
@@ -274,19 +286,6 @@ func (f FormModel) View(title string, h int) string {
 		help = formHelpStyle.Render("tab/shift+tab: next/prev field  •  enter: confirm  •  esc: cancel")
 	}
 	rows = append(rows, "", help)
-
-	// Expand vertically: target ~80% of terminal height, minus box borders+padding (4 lines).
-	targetHeight := (h * 4 / 5) - 4
-	padding := targetHeight - len(rows)
-	// Insert blank lines before the help row so content stays at the top.
-	if padding > 0 {
-		helpRow := rows[len(rows)-1]
-		rows = rows[:len(rows)-1]
-		for range padding {
-			rows = append(rows, "")
-		}
-		rows = append(rows, helpRow)
-	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return formBoxStyle.Render(body)
